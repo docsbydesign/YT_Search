@@ -18,6 +18,62 @@ from datetime import datetime
 you_tube_api_host = 'https://www.googleapis.com/youtube/v3/'
 you_tube_search_url = you_tube_api_host + 'search'
 you_tube_videos_url = you_tube_api_host + 'videos'
+you_tube_channels_url = you_tube_api_host + 'channels'
+
+
+def get_stats_for_channel (channel_id, channel_stats_data):
+    #
+    # return statistics for specified video from buffer
+    #
+    for channel in channel_stats_data['items']:
+        if channel['id'] == channel_id:
+            return channel
+
+    return None
+
+
+def get_channel_stats (api_key, search_results):
+    #
+    # Gets the video stats for the videos returned in the search results
+    #
+    channel_ids_temp = []
+    for item in search_results['items']:
+        channel_ids_temp.append(item['snippet']['channelId'])
+    # remove duplicate channel IDs
+    channel_ids = list(dict.fromkeys(channel_ids_temp))
+    #
+    # query YouTube for the data
+    #
+    query_data = {
+        'key': api_key,
+        'part': 'statistics,brandingSettings',
+        'id': ','.join(channel_ids)
+    }
+    #
+    query_headers = {
+        'Content-Type': 'application/json'
+    }
+    channel_stats_data = None
+    try:
+        #
+        #   Get the data from YouTube
+        #
+        query_results = requests.get(you_tube_channels_url, params=query_data, headers=query_headers)
+        # if the request returned data, it should be a JSON string, so try to parse it
+        # check for a response instead of a successful status code to catch and display
+        # error responses as well as successful ones.
+        if query_results.text:
+            # parse the response
+            # if this doesn't work, the exception handler will catch it
+            channel_stats_data = query_results.json()
+
+    except Exception as e:
+        # if an exception was raised, get the message
+        print(str(e))
+        print(traceback.format_exc())
+
+    return channel_stats_data
+
 
 def get_stats_for_video (video_id, video_stats_data):
     #
@@ -70,6 +126,7 @@ def get_video_stats (api_key, search_results):
 
     return video_stats_data
 
+
 def print_search_csv (api_key, search_term, search_results):
     #
     # format selected fields as CSV and write to console
@@ -84,8 +141,15 @@ def print_search_csv (api_key, search_term, search_results):
     stats_fields = [
         "viewCount",
         "likeCount",
+        "dislikeCount",
         "favoriteCount",
         "commentCount"
+    ]
+
+    channel_stats_fields = [
+        "viewCount",
+        "subscriberCount",
+        "videoCount"
     ]
 
     csv_fields = [
@@ -102,7 +166,10 @@ def print_search_csv (api_key, search_term, search_results):
         "likeCount",
         "dislikeCount",
         "favoriteCount",
-        "commentCount"
+        "commentCount",
+        "channelViews",
+        "channelSubscribers",
+        "channelVideos"
     ]
 
     time_now = datetime.now()
@@ -110,10 +177,13 @@ def print_search_csv (api_key, search_term, search_results):
     search_time = time_now.strftime("%d/%m/%Y %H:%M:%S")
 
     #
-    # get statistics for videos
+    # get statistics for videos & channels
     #
     video_stats_data = get_video_stats (api_key, search_results)
-
+    channel_stats_data = get_channel_stats(api_key, search_results)
+    #
+    #   write the results as a CSV file
+    #
     csv_writer = csv.writer(sys.stdout,
                             delimiter=',',
                             quotechar='"',
@@ -141,6 +211,16 @@ def print_search_csv (api_key, search_term, search_results):
         for field in stats_fields:
             try:
                 csv_row.append(str(video_stats[field]))
+            except:
+                # if the field is missing, assign a value of 0
+                csv_row.append("0")
+
+        #
+        #   load the channel data
+        channel_stats = get_stats_for_channel(item['snippet']['channelId'], channel_stats_data)
+        for field in channel_stats_fields:
+            try:
+                csv_row.append(str(channel_stats['statistics'][field]))
             except:
                 # if the field is missing, assign a value of 0
                 csv_row.append("0")
