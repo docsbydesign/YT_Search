@@ -10,6 +10,7 @@ import sys
 import requests
 import json
 import csv
+import re
 import traceback
 from datetime import datetime
 #
@@ -20,6 +21,32 @@ you_tube_search_url = you_tube_api_host + 'search'
 you_tube_videos_url = you_tube_api_host + 'videos'
 you_tube_channels_url = you_tube_api_host + 'channels'
 
+
+def format_iso8601_as_hms (iso8601_duration):
+    # if string is not a duration, return it
+    if iso8601_duration[:2] != 'PT':
+        return iso8601_duration
+    #
+    #   parse the string
+    regex = 'PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?'
+    return_value = ''
+
+    duration_elements = re.match(regex, iso8601_duration)
+
+    try:
+        for digit in range (1,4):
+            if (duration_elements.group(digit)):
+                return_value = return_value + duration_elements.group(digit)
+            else:
+                return_value = return_value + '0'
+            if (digit < 3):
+                return_value = return_value + ":"
+    except Exception as e:
+        # if an exception was raised, get the message
+        print(str(e), file=sys.stderr)
+        print(traceback.format_exc(), file=sys.stderr)
+
+    return return_value
 
 def get_stats_for_channel (channel_id, channel_stats_data):
     #
@@ -69,8 +96,8 @@ def get_channel_stats (api_key, search_results):
 
     except Exception as e:
         # if an exception was raised, get the message
-        print(str(e))
-        print(traceback.format_exc())
+        print(str(e), file=sys.stderr)
+        print(traceback.format_exc(), file=sys.stderr)
 
     return channel_stats_data
 
@@ -79,9 +106,13 @@ def get_stats_for_video (video_id, video_stats_data):
     #
     # return statistics for specified video from buffer
     #
-    for video in video_stats_data['items']:
-        if video['id'] == video_id:
-            return video['statistics']
+    try:
+        for video in video_stats_data['items']:
+            if video['id'] == video_id:
+                return video
+    except Exception as e:
+        print(str(e), file=sys.stderr)
+        print(traceback.format_exc(), file=sys.stderr)
 
     return None
 
@@ -98,7 +129,7 @@ def get_video_stats (api_key, search_results):
     #
     query_data = {
         'key': api_key,
-        'part': 'statistics',
+        'part': 'statistics,contentDetails',
         'id': ','.join(video_ids)
     }
     #
@@ -121,8 +152,8 @@ def get_video_stats (api_key, search_results):
 
     except Exception as e:
         # if an exception was raised, get the message
-        print(str(e))
-        print(traceback.format_exc())
+        print(str(e), file=sys.stderr)
+        print(traceback.format_exc(), file=sys.stderr)
 
     return video_stats_data
 
@@ -146,6 +177,11 @@ def print_search_csv (api_key, search_term, search_results):
         "commentCount"
     ]
 
+    content_fields = [
+        "duration",
+        "definition"
+    ]
+
     channel_stats_fields = [
         "viewCount",
         "subscriberCount",
@@ -162,6 +198,9 @@ def print_search_csv (api_key, search_term, search_results):
         "description",
         "channelTitle",
         "channelId",
+        "duration_ISO8601",
+        "quality",
+        "duration",
         "viewCount",
         "likeCount",
         "dislikeCount",
@@ -174,7 +213,7 @@ def print_search_csv (api_key, search_term, search_results):
 
     time_now = datetime.now()
     # dd/mm/YY H:M:S
-    search_time = time_now.strftime("%d/%m/%Y %H:%M:%S")
+    search_time = time_now.strftime("%m/%d/%Y %H:%M:%S")
 
     #
     # get statistics for videos & channels
@@ -208,13 +247,33 @@ def print_search_csv (api_key, search_term, search_results):
         #
         #   load the values from the video's stats
         video_stats = get_stats_for_video(item['id']['videoId'], video_stats_data)
-        for field in stats_fields:
+        #       first, those from the contentDetails object
+        for field in content_fields:
             try:
-                csv_row.append(str(video_stats[field]))
+                csv_row.append(video_stats['contentDetails'][field])
             except:
                 # if the field is missing, assign a value of 0
                 csv_row.append("0")
 
+        # then the formatted duration
+        try:
+            csv_row.append(format_iso8601_as_hms(video_stats['contentDetails']["duration"]))
+        except Exception as e:
+            # if an exception was raised, get the message
+            print(str(e), file=sys.stderr)
+            print(traceback.format_exc(), file=sys.stderr)
+            # if the field is missing, assign a value of blank
+            csv_row.append(" ")
+        # csv_row.append("n/a")
+
+        #
+        #       then, those from the statistics object
+        for field in stats_fields:
+            try:
+                csv_row.append(str(video_stats['statistics'][field]))
+            except:
+                # if the field is missing, assign a value of 0
+                csv_row.append("0")
         #
         #   load the channel data
         channel_stats = get_stats_for_channel(item['snippet']['channelId'], channel_stats_data)
@@ -264,20 +323,29 @@ def search_you_tube(api_key, search_term):
             # parse the response
             # if this doesn't work, the exception handler will catch it
             search_data = search_results.json()
-            # format search data and print to console
-            #print (json.dumps(search_data, indent = 4, separators = (',', ': ')))
-            print_search_csv(api_key, search_term, search_data)
             #
-            #   Get search result count
-            #
-            return_value = len(search_data['items'])
+            #   check for errors
+            if search_data['error']:
+                print ("*** Error: " + str(search_data['error']['code']) +
+                       ', ' + search_data['error']['message'], file=sys.stderr)
+            else:
+                #
+                # no errors, so continue and
+                # format search data and print to console
+                #print (json.dumps(search_data, indent = 4, separators = (',', ': ')))
+                print_search_csv(api_key, search_term, search_data)
+                #
+                #   Get search result count
+                #
+                return_value = len(search_data['items'])
 
     except Exception as e:
         # if an exception was raised, get the message
-        print(str(e))
-        print(traceback.format_exc())
+        print(str(e), file=sys.stderr)
+        print(traceback.format_exc(), file=sys.stderr)
 
     return return_value
+
 
 '''
 def close_session(token):
@@ -315,7 +383,6 @@ def close_session(token):
 
     return # nothing
 '''
-
 def main(argv):
     #    Search YouTube using the credentials and search term passed in the command line
 
