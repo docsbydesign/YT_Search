@@ -98,7 +98,7 @@ def get_channel_stats (api_key, search_results):
             channel_stats_data = query_results.json()
             #
             #   check for errors
-            if channel_stats_data['error']:
+            if 'error' in channel_stats_data:
                 print ("*** Error: " + str(channel_stats_data['error']['code']) +
                        ', ' + video_stats_data['error']['message'], file=sys.stderr)
 
@@ -159,7 +159,7 @@ def get_video_stats (api_key, search_results):
             video_stats_data = query_results.json()
             #
             #   check for errors
-            if video_stats_data['error']:
+            if 'error' in video_stats_data:
                 print ("*** Error: " + str(video_stats_data['error']['code']) +
                        ', ' + video_stats_data['error']['message'], file=sys.stderr)
 
@@ -344,7 +344,7 @@ def search_you_tube(api_key, search_term):
             search_data = search_results.json()
             #
             #   check for errors
-            if search_data['error']:
+            if 'error' in search_data:
                 print ("*** Error: " + str(search_data['error']['code']) +
                        ', ' + search_data['error']['message'], file=sys.stderr)
             else:
