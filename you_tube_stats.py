@@ -26,11 +26,11 @@ def format_iso8601_as_hms (iso8601_duration):
     # if string is not a duration, return it
     if iso8601_duration[:2] != 'PT':
         return iso8601_duration
-    #
-    #   parse the string
     regex = 'PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?'
     return_value = ''
 
+    #
+    #   parse the duration string
     duration_elements = re.match(regex, iso8601_duration)
 
     try:
@@ -42,11 +42,14 @@ def format_iso8601_as_hms (iso8601_duration):
             if (digit < 3):
                 return_value = return_value + ":"
     except Exception as e:
+        # return original string if an exception is raised
+        return_value = iso8601_duration
         # if an exception was raised, get the message
         print(str(e), file=sys.stderr)
         print(traceback.format_exc(), file=sys.stderr)
 
     return return_value
+
 
 def get_stats_for_channel (channel_id, channel_stats_data):
     #
@@ -55,13 +58,13 @@ def get_stats_for_channel (channel_id, channel_stats_data):
     for channel in channel_stats_data['items']:
         if channel['id'] == channel_id:
             return channel
-
+    # return none, if a matching channel is not found
     return None
 
 
 def get_channel_stats (api_key, search_results):
     #
-    # Gets the video stats for the videos returned in the search results
+    # Get the channel stats for the videos returned in the search results
     #
     channel_ids_temp = []
     for item in search_results['items']:
@@ -93,6 +96,11 @@ def get_channel_stats (api_key, search_results):
             # parse the response
             # if this doesn't work, the exception handler will catch it
             channel_stats_data = query_results.json()
+            #
+            #   check for errors
+            if channel_stats_data['error']:
+                print ("*** Error: " + str(channel_stats_data['error']['code']) +
+                       ', ' + video_stats_data['error']['message'], file=sys.stderr)
 
     except Exception as e:
         # if an exception was raised, get the message
@@ -113,13 +121,13 @@ def get_stats_for_video (video_id, video_stats_data):
     except Exception as e:
         print(str(e), file=sys.stderr)
         print(traceback.format_exc(), file=sys.stderr)
-
+    # return none if no matching entry is found
     return None
 
 
 def get_video_stats (api_key, search_results):
     #
-    # Gets the video stats for the videos returned in the search results
+    # Get the video stats for the videos returned in the search results
     #
     video_ids = []
     for item in search_results['items']:
@@ -149,6 +157,11 @@ def get_video_stats (api_key, search_results):
             # parse the response
             # if this doesn't work, the exception handler will catch it
             video_stats_data = query_results.json()
+            #
+            #   check for errors
+            if video_stats_data['error']:
+                print ("*** Error: " + str(video_stats_data['error']['code']) +
+                       ', ' + video_stats_data['error']['message'], file=sys.stderr)
 
     except Exception as e:
         # if an exception was raised, get the message
@@ -160,7 +173,7 @@ def get_video_stats (api_key, search_results):
 
 def print_search_csv (api_key, search_term, search_results):
     #
-    # format selected fields as CSV and write to console
+    # format selected fields as CSV and write it to stdout
     #
     snippet_fields = [
         "title",
@@ -216,10 +229,11 @@ def print_search_csv (api_key, search_term, search_results):
     search_time = time_now.strftime("%m/%d/%Y %H:%M:%S")
 
     #
-    # get statistics for videos & channels
+    # get statistics for the videos & channels referenced in the search results
     #
     video_stats_data = get_video_stats (api_key, search_results)
     channel_stats_data = get_channel_stats(api_key, search_results)
+
     #
     #   write the results as a CSV file
     #
@@ -248,6 +262,7 @@ def print_search_csv (api_key, search_term, search_results):
         #   load the values from the video's stats
         video_stats = get_stats_for_video(item['id']['videoId'], video_stats_data)
         #       first, those from the contentDetails object
+        #       the exception handler should take care of any empty or missing objects
         for field in content_fields:
             try:
                 csv_row.append(video_stats['contentDetails'][field])
@@ -268,6 +283,7 @@ def print_search_csv (api_key, search_term, search_results):
 
         #
         #       then, those from the statistics object
+        #       the exception handler should take care of any empty or missing objects
         for field in stats_fields:
             try:
                 csv_row.append(str(video_stats['statistics'][field]))
@@ -278,6 +294,7 @@ def print_search_csv (api_key, search_term, search_results):
         #   load the channel data
         channel_stats = get_stats_for_channel(item['snippet']['channelId'], channel_stats_data)
         for field in channel_stats_fields:
+            #       the exception handler should take care of any empty or missing objects
             try:
                 csv_row.append(str(channel_stats['statistics'][field]))
             except:
@@ -287,6 +304,7 @@ def print_search_csv (api_key, search_term, search_results):
         #   write this video's row of data
         csv_writer.writerow(csv_row)
 
+
 def search_you_tube(api_key, search_term):
     #
     #    search YouTube for videos matching search_term
@@ -295,7 +313,7 @@ def search_you_tube(api_key, search_term):
     #
     return_value = 0
     #
-    #   credential data to pass to session resource
+    #   Set parameters for query.
     #
     search_data = {
         'key': api_key,
@@ -310,6 +328,7 @@ def search_you_tube(api_key, search_term):
     search_headers = {
         'Content-Type': 'application/json'
     }
+
     try:
         #
         #   Get the search results from YouTube
@@ -347,42 +366,6 @@ def search_you_tube(api_key, search_term):
     return return_value
 
 
-'''
-def close_session(token):
-    #
-    #   Close the piclinic session referenced by token
-    #
-    #       NOTE that the DELETE action requires only the token header
-    #
-    close_session_header = {
-        'X-piClinic-token': token
-    }
-
-    try:
-        session = requests.delete(piclinic_session_url, headers=close_session_header)
-        if session.text:
-            # if the request returned data, it should be a JSON string, so try to parse it
-            session_data = session.json()
-            if session_data['status']['httpResponse'] :
-                delete_status = session_data['status']['httpResponse']
-                # if there's an httpResponse, there's also an httpReason
-                delete_response = session_data['status']['httpReason']
-
-    except Exception as e:
-        delete_status = 500
-        delete_status = str(e)
-
-    if delete_status != 200:
-        # 200 = success, for anything else, show the reason.
-        #  However, in most cases, either way the session is closed.
-        #  either by this call or a previous one.
-        #
-        print("An error occurred closing the session.")
-        print("Status : " + str(delete_status))
-        print("Reason: " + delete_response)
-
-    return # nothing
-'''
 def main(argv):
     #    Search YouTube using the credentials and search term passed in the command line
 
